@@ -2,9 +2,9 @@
 
 Fit a kernel-based model using multiple kernels, learning the weights.
 """
+from abc import abstractmethod
 
 import numpy as np
-
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
 from sklearn.utils.validation import check_is_fitted
 
@@ -31,10 +31,10 @@ class MultipleKernelLearning(BaseEstimator):
         Penalty parameter C of the error term.
     """
 
-    def __init__(self, kernels=None, p=1., maxit=10, verbose=False, tol=1e-5,
+    def __init__(self, kernels=None, p=1., max_iter=10, verbose=False, tol=1e-5,
                  kernel=None, combination='linear'):
         self.p = p
-        self.maxit = maxit
+        self.max_iter = max_iter
         self.verbose = verbose
         self.tol = tol
         self.combination = combination
@@ -68,7 +68,7 @@ class MultipleKernelLearning(BaseEstimator):
         # kernel weights
         gammas = (1.0 / n_kernels) ** (1.0 / self.p) * np.ones(n_kernels)
 
-        for it in range(self.maxit):
+        for it in range(self.max_iter):
             if self.verbose:
                 print("Gammas : %s" % gammas)
 
@@ -108,6 +108,7 @@ class MultipleKernelLearning(BaseEstimator):
         K = _combine_kernels(kernels_, self.gammas_, self.combination)
         return self.kernel.predict(K)
 
+    @abstractmethod
     def _update_kernel_weights(self, kernels, y):
         raise NotImplementedError("abstract method")
 
