@@ -8,8 +8,11 @@ import warnings
 
 import numpy as np
 from sklearn.base import BaseEstimator, RegressorMixin
+from sklearn.linear_model.base import LinearClassifierMixin
+from sklearn.linear_model.base import LinearModel
 from sklearn.linear_model.ridge import _solve_cholesky_kernel
-from sklearn.metrics import r2_score
+from sklearn.metrics import accuracy_score, r2_score
+from sklearn.preprocessing import LabelBinarizer
 from sklearn.utils.extmath import squared_norm
 
 from regain.prox import prox_laplacian
@@ -21,9 +24,9 @@ from regain.utils import convergence
 def objective(K, y, alpha, lamda, beta, w):
     """Objective function for lasso kernel learning."""
     obj = .5 * sum(squared_norm(
-        np.dot(alpha[j], K[j].T.dot(w)) - y[j]) for j in range(len(K)))
+        alpha[j].dot(K[j].T.dot(w)) - y[j]) for j in range(len(K)))
     obj += lamda * np.abs(w).sum()
-    obj += beta * squared_norm(w)
+    obj += beta * sum(squared_norm(a) for a in alpha)
     return obj
 
 
@@ -44,31 +47,40 @@ def objective_admm2(x, y, alpha, lamda, beta, w1):
     return obj
 
 
-def enet_kernel_learning(K, y, lamda=0.01, beta=0.01, gamma=1, max_iter=100, verbose=0,
-                          tol=1e-4, return_n_iter=True):
+def enet_kernel_learning(
+        K, y, lamda=0.01, beta=0.01, gamma='auto', max_iter=100, verbose=0,
+        tol=1e-4, return_n_iter=True):
     """Elastic Net kernel learning.
 
     Solve the following problem via alternating minimisation:
         min sum_{i=1}^p 1/2 ||alpha_i * w * K_i - y_i||^2 + lamda ||w||_1 +
         + beta||w||_2^2
     """
-    alpha = [np.zeros(y_i.size) for y_i in y]
-    coef = np.zeros(len(K[0]))
+    n_patients = len(K)
+    n_kernels = len(K[0])
+    coef = np.ones(n_kernels)
+
+    alpha = [np.zeros(K[j].shape[2]) for j in range(n_patients)]
     # KKT = [K[j].T.dot(K[j]) for j in range(len(K))]
     # print(KKT[0].shape)
-    lipschitz_constant = np.array([
-        sum(np.linalg.norm(K_j[i].dot(K_j[i].T)) for i in range(K_j.shape[0]))
-        for K_j in K])
-    gamma = 1. / (lipschitz_constant)
-    print (gamma)
+    if gamma == 'auto':
+        lipschitz_constant = np.array([
+            sum(np.linalg.norm(K_j[i].dot(K_j[i].T)) for i in range(K_j.shape[0]))
+            for K_j in K])
+        gamma = 1. / (lipschitz_constant)
 
+    objective_new = 0
     for iteration_ in range(max_iter):
         w_old = coef.copy()
         alpha_old = [a.copy() for a in alpha]
+        objective_old = objective_new
 
         # update w
-        gradient = sum((np.dot(alpha[j], K[j].T.dot(coef)) - y[j]).dot(
-            alpha[j].dot(K[j].T)) for j in range(len(K)))
+        A = [K[j].dot(alpha[j]) for j in range(n_patients)]
+        alpha_coef_K = [alpha[j].dot(K[j].T.dot(coef))
+                        for j in range(n_patients)]
+        gradient = sum((alpha_coef_K[j] - y[j]).dot(A[j].T)
+                       for j in range(n_patients))
 
         # gradient_2 = coef.dot(sum(
         #     np.dot(K[j].dot(alpha[j]), K[j].dot(alpha[j]).T)
@@ -79,24 +91,34 @@ def enet_kernel_learning(K, y, lamda=0.01, beta=0.01, gamma=1, max_iter=100, ver
         #     alpha[j].dot(KKT[j].dot(alpha[j])) for j in range(len(K)))) - sum(
         #         y[j].dot(K[j].dot(alpha[j]).T) for j in range(len(K)))
 
-        gradient += 2 * beta * coef
+        # gradient += 2 * beta * coef
         coef = soft_thresholding(coef - gamma * gradient, lamda=lamda * gamma)
 
         # update alpha
-        for j in range(len(K)):
-            alpha[j] = _solve_cholesky_kernel(
-                K[j].T.dot(coef), y[j][..., None], lamda).ravel()
+        # for j in range(len(K)):
+        #     alpha[j] = _solve_cholesky_kernel(
+        #         K[j].T.dot(coef), y[j][..., None], lamda).ravel()
+        A = [K[j].T.dot(coef) for j in range(n_patients)]
+        alpha_coef_K = [alpha[j].dot(K[j].T.dot(coef))
+                        for j in range(n_patients)]
+        gradient = [(alpha_coef_K[j] - y[j]).dot(A[j].T) + 2 * beta * alpha[j]
+                    for j in range(n_patients)]
+        alpha = [alpha[j] - gamma * gradient[j] for j in range(n_patients)]
 
+        objective_new = objective(K, y, alpha, lamda, beta, coef)
+        objective_difference = abs(objective_new - objective_old)
         snorm = np.sqrt(squared_norm(coef - w_old) + sum(
             squared_norm(a - a_old) for a, a_old in zip(alpha, alpha_old)))
 
         obj = objective(K, y, alpha, lamda, beta, coef)
 
-        if verbose:
+        if verbose and iteration_ % 10 == 0:
             print("obj: %.4f, snorm: %.4f" % (obj, snorm))
 
-        if snorm < tol or np.isnan(snorm):
+        if snorm < tol and objective_difference < tol:
             break
+        if np.isnan(snorm) or np.isnan(objective_difference):
+            raise ValueError('assdgg')
     else:
         warnings.warn("Objective did not converge.")
 
@@ -202,8 +224,8 @@ def enet_kernel_learning_admm2(
     """Elastic Net kernel learning.
 
     Solve the following problem via ADMM:
-        min sum_{i=1}^p 1/2 ||alpha_i * w * K_i - y_i||^2 + lamda ||w||_1 +
-        + beta||w||_2^2
+        min sum_{i=1}^p 1/2 ||y_i - alpha_i * sum_{k=1}^{n_k} w_k * K_{ik}||^2
+        + lamda ||w||_1 + beta sum_{j=1}^{c_i}||alpha_j||_2^2
     """
     n_patients = len(K)
     n_kernels = len(K[0])
@@ -298,7 +320,7 @@ def enet_kernel_learning_admm2(
     return return_list
 
 
-class ElasticNetKernelLearning(BaseEstimator, RegressorMixin):
+class ElasticNetKernelLearning(LinearModel, RegressorMixin):
     """Multiple kernel learning via Lasso model.
 
     Parameters
@@ -342,7 +364,7 @@ class ElasticNetKernelLearning(BaseEstimator, RegressorMixin):
                 K, y, lamda=self.lamda, beta=self.beta,
                 tol=self.tol, rtol=self.rtol, max_iter=self.max_iter,
                 verbose=self.verbose, return_n_iter=True, rho=self.rho)
-
+        self.intercept_ = 0.
         return self
 
     def predict(self, K):
@@ -361,8 +383,10 @@ class ElasticNetKernelLearning(BaseEstimator, RegressorMixin):
         # check_is_fitted(self, ["X_fit_", "dual_coef_"])
         # K = self._get_kernel(X, self.X_fit_)
         # return np.dot(K, self.dual_coef_)
-        return [np.dot(self.alpha_[j], K[j].T.dot(self.coef_))
-                for j in range(len(K))]
+        # return [np.dot(self.alpha_[j], K[j].T.dot(self.coef_))
+        #         for j in range(len(K))]
+        return [super(ElasticNetKernelLearning, self).predict(
+            K[j].dot(self.alpha_[j]).T) for j in range(len(K))]
 
     def score(self, K, y, sample_weight=None):
         """Returns the coefficient of determination R^2 of the prediction.
@@ -401,3 +425,105 @@ class ElasticNetKernelLearning(BaseEstimator, RegressorMixin):
                 r2_score(y[j], y_pred[j], sample_weight=sample_weight[j],
                          multioutput='variance_weighted')
                 for j in range(len(K))])
+
+
+class ElasticNetKernelLearningClassifier(ElasticNetKernelLearning, LinearClassifierMixin):
+    """Multiple kernel learning classifier.
+
+    Parameters
+    ----------
+    ...
+    """
+    def fit(self, K, y):
+        """Learn weights for kernels.
+
+        Parameters:
+        K : array-like
+            K should be a list of kernels (if self.kernel.kernel is
+            'precomputed'). Otherwise is a 2-d data matrix.
+        y : array-like, shape = [n_samples] or [n_samples, n_targets]
+            Target values
+
+        Returns
+        -------
+        self : returns an instance of self.
+
+        """
+        self._label_binarizer = LabelBinarizer(pos_label=1, neg_label=-1)
+        Y = [self._label_binarizer.fit_transform(j).ravel() for j in y]
+        if self._label_binarizer.y_type_.startswith('multilabel'):
+            # we don't (yet) support multi-label classification in ENet
+            raise ValueError(
+                "%s doesn't support multi-label classification" % (
+                    self.__class__.__name__))
+
+        # Y = column_or_1d(Y, warn=True)
+        super(ElasticNetKernelLearningClassifier, self).fit(K, Y)
+        if self.classes_.shape[0] > 2:
+            ndim = self.classes_.shape[0]
+        else:
+            ndim = 1
+        self.coef_ = self.coef_.reshape(ndim, -1)
+
+        return self
+
+    def predict(self, K):
+        """Predict using the kernel ridge model
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix}, shape = [n_samples, n_features]
+            Samples.
+
+        Returns
+        -------
+        C : array, shape = [n_samples] or [n_samples, n_targets]
+            Returns predicted values.
+        """
+        # check_is_fitted(self, ["X_fit_", "dual_coef_"])
+        # K = self._get_kernel(X, self.X_fit_)
+        # return np.dot(K, self.dual_coef_)
+        # return [super(ElasticNetKernelLearningClassifier, self).predict(
+        #     np.dot(self.alpha_[j], K[j].T)) for j in range(len(K))]
+        return [LinearClassifierMixin.predict(
+            self, K[j].dot(self.alpha_[j]).T) for j in range(len(K))]
+
+    def score(self, K, y, sample_weight=None):
+        """Returns the coefficient of determination R^2 of the prediction.
+
+        The coefficient R^2 is defined as (1 - u/v), where u is the residual
+        sum of squares ((y_true - y_pred) ** 2).sum() and v is the total
+        sum of squares ((y_true - y_true.mean()) ** 2).sum().
+        The best possible score is 1.0 and it can be negative (because the
+        model can be arbitrarily worse). A constant model that always
+        predicts the expected value of y, disregarding the input features,
+        would get a R^2 score of 0.0.
+
+        Parameters
+        ----------
+        X : array-like, shape = (n_samples, n_features)
+            Test samples.
+
+        y : array-like, shape = (n_samples) or (n_samples, n_outputs)
+            True values for X.
+
+        sample_weight : array-like, shape = [n_samples], optional
+            Sample weights.
+
+        Returns
+        -------
+        score : float
+            R^2 of self.predict(X) wrt. y.
+        """
+        y_pred = self.predict(K)
+        if sample_weight is None:
+            return np.mean([accuracy_score(
+                y[j], y_pred[j]) for j in range(len(K))])
+        else:
+            return np.mean([
+                accuracy_score(y[j], y_pred[j], sample_weight=sample_weight[j])
+                for j in range(len(K))])
+
+    @property
+    def classes_(self):
+        return self._label_binarizer.classes_
