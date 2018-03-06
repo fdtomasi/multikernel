@@ -327,6 +327,9 @@ class ElasticNetKernelLearning(LinearModel, RegressorMixin):
     ----------
     ...
     """
+    # Ensure consistent split
+    _pairwise = True
+
     def __init__(self, lamda=0.01, beta=0.01, gamma=1, max_iter=100, verbose=False,
                  tol=1e-4, mode='gd', rho=1, rtol=1e-4):
         self.max_iter = max_iter
@@ -354,6 +357,8 @@ class ElasticNetKernelLearning(LinearModel, RegressorMixin):
         self : returns an instance of self.
 
         """
+        if self.verbose > 1:
+            print(self.get_params())
         if self.mode == 'gd':
             self.alpha_, self.coef_, self.n_iter_ = enet_kernel_learning(
                 K, y, lamda=self.lamda, beta=self.beta, gamma=self.gamma,
