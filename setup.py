@@ -1,20 +1,17 @@
 #!/usr/bin/python
-"""mkl setup script.
+"""multikernel setup script.
 
 Author: Federico Tomasi
 Copyright (c) 2017, Federico Tomasi.
 Licensed under the BSD 3-Clause License (see LICENSE.txt).
 """
 
-from setuptools import setup, find_packages
-# import numpy as np
+from setuptools import find_packages, setup
 
-# Package Version
-from mkl import __version__ as version
-# alignment_module = Extension('icing.align.align',
-#                              sources=['icing/align/alignment.c'])
+from multikernel import __version__ as version
+
 setup(
-    name='mkl',
+    name='multikernel',
     version=version,
 
     description=('MKL (Multiple Kernel Learning)'),
@@ -23,8 +20,8 @@ setup(
     author_email='federico.tomasi@dibris.unige.it',
     maintainer='Federico Tomasi',
     maintainer_email='federico.tomasi@dibris.unige.it',
-    url='https://github.com/fdtomasi/mkl',
-    download_url='https://github.com/fdtomasi/mkl/archive/'
+    url='https://github.com/fdtomasi/multikernel',
+    download_url='https://github.com/fdtomasi/multikernel/archive/'
                  'v%s.tar.gz' % version,
     keywords=['kernel', 'learning'],
     classifiers=[

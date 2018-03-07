@@ -103,6 +103,7 @@ def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
 
     parameters : dict or None, optional
         The parameters that have been evaluated.
+
     """
     if verbose > 1:
         if parameters is None:
@@ -209,7 +210,6 @@ class MultipleKernelGridSearchCV(GridSearchCV):
 
         Parameters
         ----------
-
         X : array-like, shape = [n_samples, n_features]
             Training vector, where n_samples is the number of samples and
             n_features is the number of features.
@@ -224,6 +224,7 @@ class MultipleKernelGridSearchCV(GridSearchCV):
 
         **fit_params : dict of string -> object
             Parameters passed to the ``fit`` method of the estimator
+
         """
         if self.fit_params is not None:
             warnings.warn('"fit_params" as a constructor argument was '
@@ -262,7 +263,6 @@ class MultipleKernelGridSearchCV(GridSearchCV):
 
         # X, y, groups = indexable(X, y, groups)
         n_splits = cv.get_n_splits(X, y, groups)
-        print(n_splits)
         # Regenerate parameter iterable for each fit
         candidate_params = list(self._get_param_iterator())
         n_candidates = len(candidate_params)
@@ -284,8 +284,8 @@ class MultipleKernelGridSearchCV(GridSearchCV):
                                   return_n_test_samples=True,
                                   return_times=True, return_parameters=False,
                                   error_score=self.error_score)
-          for parameters, (train, test) in product(candidate_params,
-                                                   cv.split(X[0][0], y[0], groups)))
+          for parameters, (train, test) in product(
+            candidate_params, cv.split(X[0][0], y[0], groups)))
 
         # if one choose to see train score, "out" will contain train score info
         if self.return_train_score:
@@ -306,7 +306,7 @@ class MultipleKernelGridSearchCV(GridSearchCV):
                    else {})
 
         def _store(key_name, array, weights=None, splits=False, rank=False):
-            """A small helper to store the scores/times to the cv_results_"""
+            """Store the scores/times to the cv_results_."""
             # When iterated first by splits, then by parameters
             # We want `array` to have `n_candidates` rows and `n_splits` cols.
             array = np.array(array, dtype=np.float64).reshape(n_candidates,

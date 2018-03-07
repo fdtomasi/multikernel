@@ -1,10 +1,10 @@
 """An example for regression problems."""
-import numpy as np
 import matplotlib.pyplot as pl
+import numpy as np
 import seaborn as sns
 from sklearn.svm import SVR
 
-from mkl import mkl
+from multikernel.base import MultiKernelRegressor
 
 xx, yy = np.meshgrid(np.linspace(-5, 5, 40), np.linspace(-5, 5, 40))
 np.random.seed(0)
@@ -16,7 +16,7 @@ K1 = 1. * np.dot(X, X.T)
 K2 = 2.0 * np.dot(X, X.T)
 kernels = [K1, K2]
 
-clf = mkl.MultiKernelRegressor(
+clf = MultiKernelRegressor(
     verbose=1, maxit=100,
     tol=1e-5, p=1, kernel=SVR(kernel='precomputed'))
 #   store_objective=True, kernel=KernelRidge(kernel='precomputed', alpha=.5))

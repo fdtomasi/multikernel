@@ -7,7 +7,7 @@ from __future__ import division, print_function
 import warnings
 
 import numpy as np
-from sklearn.base import BaseEstimator, RegressorMixin
+from sklearn.base import RegressorMixin
 from sklearn.linear_model.base import LinearClassifierMixin
 from sklearn.linear_model.base import LinearModel
 from sklearn.linear_model.ridge import _solve_cholesky_kernel
@@ -65,7 +65,8 @@ def enet_kernel_learning(
     # print(KKT[0].shape)
     if gamma == 'auto':
         lipschitz_constant = np.array([
-            sum(np.linalg.norm(K_j[i].dot(K_j[i].T)) for i in range(K_j.shape[0]))
+            sum(np.linalg.norm(K_j[i].dot(K_j[i].T))
+                for i in range(K_j.shape[0]))
             for K_j in K])
         gamma = 1. / (lipschitz_constant)
 
@@ -217,6 +218,7 @@ def enet_kernel_learning_admm(
     if return_n_iter:
         return_list.append(iteration_)
     return return_list
+
 
 def enet_kernel_learning_admm2(
         K, y, lamda=0.01, beta=0.01, rho=1., max_iter=100, verbose=0, rtol=1e-4,

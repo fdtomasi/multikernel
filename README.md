@@ -1,2 +1,2 @@
-# mkl
+# multikernel
 Multiple Kernel Learning

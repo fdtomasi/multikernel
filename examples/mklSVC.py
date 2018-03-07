@@ -15,11 +15,7 @@ as a linear combination of precomputed kernels.
 import numpy as np
 import pylab as pl
 
-from sklearn import svm
-from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin
-from sklearn.utils.validation import check_is_fitted
-
-from mkl.mSVC import *
+from multikernel.mSVC import RBF, MultiKernelSVC, linear
 
 if __name__ == '__main__':
     xx, yy = np.meshgrid(np.linspace(-5, 5, 40), np.linspace(-5, 5, 40))
