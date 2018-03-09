@@ -8,13 +8,20 @@ import warnings
 
 import numpy as np
 from sklearn.exceptions import NotFittedError
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, SGDClassifier
+from sklearn.linear_model.logistic import _logistic_loss
 
 from regain.validation import squared_norm
 
 
+def logistic_loss(K, y, alpha, coef, lamda, beta):
+    X = np.tensordot(coef, K, axes=1)
+    return _logistic_loss(alpha, X, y, lamda) - .5 * lamda * np.dot(alpha, alpha)
+
+
 def logistic_objective(K, y, alpha, coef, lamda, beta):
-    pass
+    X = np.tensordot(coef, K, axes=1)
+    return _logistic_loss(alpha, X, y, lamda) + beta * np.abs(coef).sum()
 
 
 def logistic_alternating(K, y, lamda=0.01, beta=0.01, gamma=.5, max_iter=100,
@@ -26,8 +33,13 @@ def logistic_alternating(K, y, lamda=0.01, beta=0.01, gamma=.5, max_iter=100,
     coef = np.ones(n_kernels)
     alpha = np.zeros(n_dimensions)
 
-    lr_p2 = LogisticRegression(penalty='l2', C=1 / lamda, warm_start=True)
-    lr_p1 = LogisticRegression(penalty='l1', C=1 / beta, warm_start=True)
+    lr_p2 = LogisticRegression(
+        verbose=verbose, penalty='l2', C=1 / lamda, warm_start=True)
+    # lr_p1 = LogisticRegression(
+    #     verbose=verbose, penalty='l1', C=1 / beta, warm_start=True)
+    lr_p1 = SGDClassifier(
+        loss='log', l1_ratio=0.1,
+        verbose=0, penalty='elasticnet', alpha=beta, warm_start=True)
 
     for iteration_ in range(max_iter):
         w_old = coef.copy()
@@ -40,20 +52,28 @@ def logistic_alternating(K, y, lamda=0.01, beta=0.01, gamma=.5, max_iter=100,
         X = np.tensordot(alpha, K, axes=([0], [2])).T
         coef = lr_p1.fit(X, y).coef_.ravel()
 
-        # objective_new = objective(K, y, alpha, coef, lamda, beta)
-        # objective_difference = abs(objective_new - objective_old)
-        snorm = np.sqrt(squared_norm(coef - w_old) +
-                        squared_norm(alpha - alpha_old))
+        # if verbose:
+        #     print("n_iter alpha %d" % lr_p2.n_iter_)
+        #     print("n_iter coef %d" % lr_p1.n_iter_)
 
-        # obj = objective(K, y, alpha, lamda, beta, coef)
+        obj = logistic_objective(K, y, alpha, coef, lamda, beta)
+        objective_difference = abs(objective_new - objective_old)
+        # snorm = np.sqrt(squared_norm(coef - w_old) +
+        #                 squared_norm(alpha - alpha_old))
+
+        diff_w = np.linalg.norm(coef - w_old)
+        diff_a = np.linalg.norm(alpha - alpha_old)
 
         if verbose:# and iteration_ % 10 == 0:
-            print("obj: %.4f, snorm: %.4f" % (0, snorm))
+            # print("obj: %.4f, snorm: %.4f" % (obj, snorm))
+            print("obj: %.4f, loss: %.4f, diff_w: %.4f, diff_a: %.4f" % (
+                obj, logistic_loss(K, y, alpha, coef, lamda, beta), diff_w,
+                diff_a))
 
-        if snorm < tol: #  and objective_difference < tol:
+        if diff_w < tol and diff_a < tol and objective_difference < tol:
             break
-        if np.isnan(snorm): # or np.isnan(objective_difference):
-            raise ValueError('assdgg')
+        if np.isnan(diff_w) or np.isnan(diff_a) or np.isnan(objective_difference):
+            raise ValueError('something is nan')
     else:
         warnings.warn("Objective did not converge.")
     return_list = [alpha, coef]

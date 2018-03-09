@@ -8,12 +8,14 @@ import warnings
 
 import numpy as np
 from sklearn.base import RegressorMixin
+from sklearn.exceptions import NotFittedError
 from sklearn.linear_model.base import LinearClassifierMixin, LinearModel
 from sklearn.linear_model.ridge import _solve_cholesky_kernel
 from sklearn.metrics import accuracy_score, r2_score
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.utils.extmath import squared_norm
 
+from regain.linear_model.group_lasso_overlap_ import safe_sparse_dot
 from regain.prox import soft_thresholding_sign as soft_thresholding
 from regain.update_rules import update_rho
 from regain.utils import convergence
@@ -144,6 +146,39 @@ class LassoKernelLearning(LinearModel, RegressorMixin):
         self.intercept_ = 0.
         return self
 
+    def decision_function(self, X):
+        """Predict confidence scores for samples.
+
+        The confidence score for a sample is the signed distance of that
+        sample to the hyperplane.
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix}, shape = (n_samples, n_features)
+            Samples.
+
+        Returns
+        -------
+        array, shape=(n_samples,) if n_classes == 2 else (n_samples, n_classes)
+            Confidence scores per (sample, class) combination. In the binary
+            case, confidence score for self.classes_[1] where >0 means this
+            class would be predicted.
+        """
+        if not hasattr(self, 'coef_') or self.coef_ is None:
+            raise NotFittedError("This %(name)s instance is not fitted "
+                                 "yet" % {'name': type(self).__name__})
+
+        # X = check_array(X, accept_sparse='csr')
+
+        n_features = self.coef_.shape[1]
+        if X.shape[0] != n_features:
+            raise ValueError("X has %d features per sample; expecting %d"
+                             % (X.shape[1], n_features))
+
+        scores = np.tensordot(self.coef_, X, axes=1) + self.intercept_
+        print(scores)
+        return scores.ravel() # if scores.shape[1] == 1 else scores
+
     def predict(self, K):
         """Predict using the kernel ridge model
 
@@ -162,8 +197,7 @@ class LassoKernelLearning(LinearModel, RegressorMixin):
         # return np.dot(K, self.dual_coef_)
         # return [np.dot(self.alpha_[j], K[j].T.dot(self.coef_))
         #         for j in range(len(K))]
-        return [super(LassoKernelLearning, self).predict(
-            K[j].dot(self.alpha_[j]).T) for j in range(len(K))]
+        return super(LassoKernelLearning, self).predict(K)
 
     def score(self, K, y, sample_weight=None):
         """Returns the coefficient of determination R^2 of the prediction.
@@ -262,8 +296,7 @@ class LassoKernelLearningClassifier(LassoKernelLearning, LinearClassifierMixin):
         # return np.dot(K, self.dual_coef_)
         # return [super(ElasticNetKernelLearningClassifier, self).predict(
         #     np.dot(self.alpha_[j], K[j].T)) for j in range(len(K))]
-        return [LinearClassifierMixin.predict(
-            self, K[j].dot(self.alpha_[j]).T) for j in range(len(K))]
+        return LinearClassifierMixin.predict(self, K)
 
     def score(self, K, y, sample_weight=None):
         """Returns the coefficient of determination R^2 of the prediction.
@@ -293,13 +326,11 @@ class LassoKernelLearningClassifier(LassoKernelLearning, LinearClassifierMixin):
             R^2 of self.predict(X) wrt. y.
         """
         y_pred = self.predict(K)
+        y_true = y[:, None].dot(y[:, None].T).ravel()
         if sample_weight is None:
-            return np.mean([accuracy_score(
-                y[j], y_pred[j]) for j in range(len(K))])
+            return accuracy_score(y_true, y_pred)
         else:
-            return np.mean([
-                accuracy_score(y[j], y_pred[j], sample_weight=sample_weight[j])
-                for j in range(len(K))])
+            return accuracy_score(y_true, y_pred, sample_weight=sample_weight)
 
     @property
     def classes_(self):
