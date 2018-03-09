@@ -7,6 +7,7 @@ from __future__ import division, print_function
 import warnings
 
 import numpy as np
+import scipy
 from sklearn.base import RegressorMixin
 from sklearn.exceptions import NotFittedError
 from sklearn.linear_model.base import LinearClassifierMixin, LinearModel
@@ -296,7 +297,7 @@ class LassoKernelLearningClassifier(LassoKernelLearning, LinearClassifierMixin):
         # return np.dot(K, self.dual_coef_)
         # return [super(ElasticNetKernelLearningClassifier, self).predict(
         #     np.dot(self.alpha_[j], K[j].T)) for j in range(len(K))]
-        return LinearClassifierMixin.predict(self, K)
+        return LinearClassifierMixin.predict(self, K).reshape(*K.shape[1:])
 
     def score(self, K, y, sample_weight=None):
         """Returns the coefficient of determination R^2 of the prediction.
@@ -326,7 +327,7 @@ class LassoKernelLearningClassifier(LassoKernelLearning, LinearClassifierMixin):
             R^2 of self.predict(X) wrt. y.
         """
         y_pred = self.predict(K)
-        y_true = y[:, None].dot(y[:, None].T).ravel()
+        y_true = y[:, None].dot(y[:, None].T)
         if sample_weight is None:
             return accuracy_score(y_true, y_pred)
         else:
