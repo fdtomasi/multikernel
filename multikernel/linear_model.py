@@ -232,8 +232,8 @@ def enet_kernel_learning_admm2(
     n_patients = len(K)
     n_kernels = len(K[0])
     coef = np.ones(n_kernels)
-
     alpha = [np.zeros(K[j].shape[2]) for j in range(n_patients)]
+
     u = [np.zeros(K[j].shape[1]) for j in range(n_patients)]
     u_1 = np.zeros(n_kernels)
     w_1 = np.zeros(n_kernels)

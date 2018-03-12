@@ -7,7 +7,6 @@ from __future__ import division, print_function
 import warnings
 
 import numpy as np
-import scipy
 from sklearn.base import RegressorMixin
 from sklearn.exceptions import NotFittedError
 from sklearn.linear_model.base import LinearClassifierMixin, LinearModel
@@ -16,7 +15,6 @@ from sklearn.metrics import accuracy_score, r2_score
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.utils.extmath import squared_norm
 
-from regain.linear_model.group_lasso_overlap_ import safe_sparse_dot
 from regain.prox import soft_thresholding_sign as soft_thresholding
 from regain.update_rules import update_rho
 from regain.utils import convergence
@@ -177,7 +175,6 @@ class LassoKernelLearning(LinearModel, RegressorMixin):
                              % (X.shape[1], n_features))
 
         scores = np.tensordot(self.coef_, X, axes=1) + self.intercept_
-        print(scores)
         return scores.ravel() # if scores.shape[1] == 1 else scores
 
     def predict(self, K):
@@ -276,10 +273,11 @@ class LassoKernelLearningClassifier(LassoKernelLearning, LinearClassifierMixin):
         else:
             ndim = 1
         self.coef_ = self.coef_.reshape(ndim, -1)
+        self.y_train_ = y
 
         return self
 
-    def predict(self, K):
+    def decision_function(self, K):
         """Predict using the kernel ridge model
 
         Parameters
@@ -297,7 +295,11 @@ class LassoKernelLearningClassifier(LassoKernelLearning, LinearClassifierMixin):
         # return np.dot(K, self.dual_coef_)
         # return [super(ElasticNetKernelLearningClassifier, self).predict(
         #     np.dot(self.alpha_[j], K[j].T)) for j in range(len(K))]
-        return LinearClassifierMixin.predict(self, K).reshape(*K.shape[1:])
+        scores = super(LassoKernelLearningClassifier, self).decision_function(K)
+        return scores.reshape(*K.shape[1:]).dot(self.y_train_)
+
+    def predict(self, K):
+        return LinearClassifierMixin.predict(self, K)
 
     def score(self, K, y, sample_weight=None):
         """Returns the coefficient of determination R^2 of the prediction.
@@ -327,7 +329,9 @@ class LassoKernelLearningClassifier(LassoKernelLearning, LinearClassifierMixin):
             R^2 of self.predict(X) wrt. y.
         """
         y_pred = self.predict(K)
-        y_true = y[:, None].dot(y[:, None].T)
+        # y_true = y[:, None].dot(self.y_train_[:, None].T).ravel()
+        # y_pred = np.sign(self.predict(K).dot(self.y_train_))
+        y_true = y
         if sample_weight is None:
             return accuracy_score(y_true, y_pred)
         else:
