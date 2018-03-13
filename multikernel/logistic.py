@@ -9,8 +9,8 @@ import numpy as np
 from sklearn.exceptions import NotFittedError
 from sklearn.linear_model import LogisticRegression, SGDClassifier
 from sklearn.linear_model.logistic import _logistic_loss
-from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import LabelBinarizer
+from sklearn.utils.validation import check_is_fitted
 
 from multikernel.lasso import LinearClassifierMixin
 
@@ -207,48 +207,9 @@ class LogisticRegressionMultipleKernel(LogisticRegression, LinearClassifierMixin
         C : array, shape = [n_samples] or [n_samples, n_targets]
             Returns predicted values.
         """
-        # check_is_fitted(self, ["X_fit_", "dual_coef_"])
-        # K = self._get_kernel(X, self.X_fit_)
-        # return np.dot(K, self.dual_coef_)
-        # return [super(ElasticNetKernelLearningClassifier, self).predict(
-        #     np.dot(self.alpha_[j], K[j].T)) for j in range(len(K))]
+        check_is_fitted(self, ["alpha_", "coef_"])
         X = np.tensordot(K, self.alpha_, axes=1)
-        return LinearClassifierMixin.predict(self, X)#.reshape(*K.shape[1:])
-
-    def score(self, K, y, sample_weight=None):
-        """Returns the coefficient of determination R^2 of the prediction.
-
-        The coefficient R^2 is defined as (1 - u/v), where u is the residual
-        sum of squares ((y_true - y_pred) ** 2).sum() and v is the total
-        sum of squares ((y_true - y_true.mean()) ** 2).sum().
-        The best possible score is 1.0 and it can be negative (because the
-        model can be arbitrarily worse). A constant model that always
-        predicts the expected value of y, disregarding the input features,
-        would get a R^2 score of 0.0.
-
-        Parameters
-        ----------
-        X : array-like, shape = (n_samples, n_features)
-            Test samples.
-
-        y : array-like, shape = (n_samples) or (n_samples, n_outputs)
-            True values for X.
-
-        sample_weight : array-like, shape = [n_samples], optional
-            Sample weights.
-
-        Returns
-        -------
-        score : float
-            R^2 of self.predict(X) wrt. y.
-        """
-        y_pred = self.predict(K)
-        y_true = y
-        if sample_weight is None:
-            return accuracy_score(y_true, y_pred)
-        else:
-            return accuracy_score(y_true, y_pred, sample_weight=sample_weight)
-
+        return LinearClassifierMixin.predict(self, X)  #.reshape(*K.shape[1:])
 
     # def predict_proba(self, X):
     #     """Probability estimates.

@@ -299,18 +299,26 @@ class LassoKernelLearningClassifier(LassoKernelLearning, LinearClassifierMixin):
         return scores.reshape(*K.shape[1:]).dot(self.y_train_)
 
     def predict(self, K):
+        """Predict class labels for samples in X.
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix}, shape = [n_samples, n_features]
+            Samples.
+
+        Returns
+        -------
+        C : array, shape = [n_samples]
+            Predicted class label per sample.
+        """
         return LinearClassifierMixin.predict(self, K)
 
     def score(self, K, y, sample_weight=None):
-        """Returns the coefficient of determination R^2 of the prediction.
+        """Returns the mean accuracy on the given test data and labels.
 
-        The coefficient R^2 is defined as (1 - u/v), where u is the residual
-        sum of squares ((y_true - y_pred) ** 2).sum() and v is the total
-        sum of squares ((y_true - y_true.mean()) ** 2).sum().
-        The best possible score is 1.0 and it can be negative (because the
-        model can be arbitrarily worse). A constant model that always
-        predicts the expected value of y, disregarding the input features,
-        would get a R^2 score of 0.0.
+        In multi-label classification, this is the subset accuracy
+        which is a harsh metric since you require for each sample that
+        each label set be correctly predicted.
 
         Parameters
         ----------
@@ -318,7 +326,7 @@ class LassoKernelLearningClassifier(LassoKernelLearning, LinearClassifierMixin):
             Test samples.
 
         y : array-like, shape = (n_samples) or (n_samples, n_outputs)
-            True values for X.
+            True labels for X.
 
         sample_weight : array-like, shape = [n_samples], optional
             Sample weights.
@@ -326,16 +334,10 @@ class LassoKernelLearningClassifier(LassoKernelLearning, LinearClassifierMixin):
         Returns
         -------
         score : float
-            R^2 of self.predict(X) wrt. y.
+            Mean accuracy of self.predict(X) wrt. y.
+
         """
-        y_pred = self.predict(K)
-        # y_true = y[:, None].dot(self.y_train_[:, None].T).ravel()
-        # y_pred = np.sign(self.predict(K).dot(self.y_train_))
-        y_true = y
-        if sample_weight is None:
-            return accuracy_score(y_true, y_pred)
-        else:
-            return accuracy_score(y_true, y_pred, sample_weight=sample_weight)
+        return LinearClassifierMixin.score(self, K, y)
 
     @property
     def classes_(self):
