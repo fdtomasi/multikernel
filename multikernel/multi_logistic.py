@@ -62,7 +62,7 @@ def _intercept_tensor(w, alpha, X, y):
     """
     c = 0.
     if alpha.size == X.shape[-1] + 1:
-        c = w[-1]
+        c = alpha[-1]
         alpha = alpha[:-1]
 
     z = np.tensordot(w, X.dot(alpha), axes=1) + c
@@ -102,12 +102,14 @@ def _logistic_loss_and_grad(w, alpha, X, y, sample_weight=None):
     n_patients = len(X)
     out = 0.
     grad = np.zeros_like(w)
+    sample_weight_orig = sample_weight.copy() if sample_weight is not None \
+        else None
 
     for i in range(n_patients):
         n_kernels, n_samples, n_features = X[i].shape
         w_i, alpha_i, c, yz = _intercept_tensor(w, alpha[i], X[i], y[i])
 
-        if sample_weight is None:
+        if sample_weight_orig is None:
             sample_weight = np.ones(n_samples)
 
         # Logistic loss is the negative of the log of the logistic function.
@@ -130,9 +132,9 @@ def logistic_alternating(K, y, lamda=0.01, beta=0.01, gamma=.5, max_iter=100,
     alpha = [np.zeros(K[j].shape[2]) for j in range(n_patients)]
     objective_new = 0
 
-    lr_p2 = LogisticRegression(
+    lr_p2 = [LogisticRegression(
         verbose=verbose, penalty='l2', C=1 / lamda, warm_start=True,
-        max_iter=max_iter // 3)
+        max_iter=max_iter // 3) for i in range(n_patients)]
     # lr_p1 = SGDClassifier(
     #     loss='log', l1_ratio=0.9,
     #     verbose=0, penalty='elasticnet', alpha=beta, warm_start=True, max_iter=1)
@@ -142,10 +144,10 @@ def logistic_alternating(K, y, lamda=0.01, beta=0.01, gamma=.5, max_iter=100,
         alpha_old = [a.copy() for a in alpha]
         objective_old = objective_new
 
-        logistics = [lr_p2.fit(np.tensordot(coef, K[j], axes=1), y[j])
+        logistics = [lr_p2[i].fit(np.tensordot(coef, K[i], axes=1), y[i])
                      for i in range(n_patients)]
-        alpha = [logistics[i].coef_.ravel() for i in range(n_patients)]
-        intercepts = [logistics[i].intercept_.ravel() for i in range(n_patients)]
+        alpha = [log.coef_.ravel() for log in logistics]
+        intercepts = [log.intercept_.ravel() for log in logistics]
         alpha_intercept = [np.hstack((a, c)) for a, c in zip(alpha, intercepts)]
 
         # X = np.tensordot(alpha, K, axes=([0], [2])).T

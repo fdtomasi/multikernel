@@ -127,13 +127,13 @@ def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
 
     # do it for each patient
     X_train, y_train, X_test, y_test = [], [], [], []
-    for x_, y_ in zip(X, y):
-        out = [_safe_split(estimator, x__, y_, train) for x__ in x_]
+    for x_, y_, tr_, ts_ in zip(X, y, train, test):
+        out = [_safe_split(estimator, x__, y_, tr_) for x__ in x_]
         X_tr, y_tr = zip(*out)
         X_train.append(np.array(X_tr))
         y_train.append(y_tr[0])  # they are all equal
 
-        out = [_safe_split(estimator, x__, y_, test, train) for x__ in x_]
+        out = [_safe_split(estimator, x__, y_, ts_, tr_) for x__ in x_]
         X_ts, y_ts = zip(*out)
         X_test.append(np.array(X_ts))
         y_test.append(y_ts[0])  # they are all equal
@@ -263,6 +263,18 @@ class MultipleKernelGridSearchCV(GridSearchCV):
 
         # X, y, groups = indexable(X, y, groups)
         n_splits = cv.get_n_splits(X, y, groups)
+
+        if groups is not None:
+            raise NotImplementedError("groups are not supported")
+
+        def generate_index(X_list, y_list):
+            X_list_transpose = [X.transpose(1, 2, 0) for X in X_list]
+            split = [cv.split(X, y) for X, y in zip(X_list_transpose, y_list)]
+            for i in range(n_splits):
+                yield zip(*[next(s) for s in split])
+
+        generate_index_iter = generate_index(X, y)
+
         # Regenerate parameter iterable for each fit
         candidate_params = list(self._get_param_iterator())
         n_candidates = len(candidate_params)
@@ -285,7 +297,7 @@ class MultipleKernelGridSearchCV(GridSearchCV):
                                   return_times=True, return_parameters=False,
                                   error_score=self.error_score)
           for parameters, (train, test) in product(
-            candidate_params, cv.split(X[0][0], y[0], groups)))
+            candidate_params, generate_index_iter))
 
         # if one choose to see train score, "out" will contain train score info
         if self.return_train_score:
