@@ -11,7 +11,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.linear_model.logistic import _intercept_dot, _logistic_loss
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import LabelBinarizer
-from sklearn.utils.extmath import log_logistic, safe_sparse_dot
+from sklearn.utils.extmath import log_logistic, safe_sparse_dot, softmax
 from sklearn.utils.validation import check_is_fitted
 
 from multikernel.lasso import LinearClassifierMixin, squared_norm
@@ -314,52 +314,48 @@ class MultipleLogisticRegressionMultipleKernel(
                 accuracy_score(y[j], y_pred[j], sample_weight=sample_weight[j])
                 for j in range(len(K))])
 
+    def predict_proba(self, X):
+        """Probability estimates.
 
-    # def predict_proba(self, X):
-    #     """Probability estimates.
-    #
-    #     The returned estimates for all classes are ordered by the
-    #     label of classes.
-    #
-    #     For a multi_class problem, if multi_class is set to be "multinomial"
-    #     the softmax function is used to find the predicted probability of
-    #     each class.
-    #     Else use a one-vs-rest approach, i.e calculate the probability
-    #     of each class assuming it to be positive using the logistic function.
-    #     and normalize these values across all the classes.
-    #
-    #     Parameters
-    #     ----------
-    #     X : array-like, shape = [n_samples, n_features]
-    #
-    #     Returns
-    #     -------
-    #     T : array-like, shape = [n_samples, n_classes]
-    #         Returns the probability of the sample for each class in the model,
-    #         where classes are ordered as they are in ``self.classes_``.
-    #     """
-    #     if not hasattr(self, "coef_"):
-    #         raise NotFittedError("Call fit before prediction")
-    #     calculate_ovr = self.coef_.shape[0] == 1 or self.multi_class == "ovr"
-    #     if calculate_ovr:
-    #         return super(LogisticRegression, self)._predict_proba_lr(X)
-    #     else:
-    #         return softmax(self.decision_function(X), copy=False)
-    #
-    # def predict_log_proba(self, X):
-    #     """Log of probability estimates.
-    #
-    #     The returned estimates for all classes are ordered by the
-    #     label of classes.
-    #
-    #     Parameters
-    #     ----------
-    #     X : array-like, shape = [n_samples, n_features]
-    #
-    #     Returns
-    #     -------
-    #     T : array-like, shape = [n_samples, n_classes]
-    #         Returns the log-probability of the sample for each class in the
-    #         model, where classes are ordered as they are in ``self.classes_``.
-    #     """
-    #     return np.log(self.predict_proba(X))
+        The returned estimates for all classes are ordered by the
+        label of classes.
+
+        For a multi_class problem, if multi_class is set to be "multinomial"
+        the softmax function is used to find the predicted probability of
+        each class.
+        Else use a one-vs-rest approach, i.e calculate the probability
+        of each class assuming it to be positive using the logistic function.
+        and normalize these values across all the classes.
+
+        Parameters
+        ----------
+        X : array-like, shape = [n_samples, n_features]
+
+        Returns
+        -------
+        T : array-like, shape = [n_samples, n_classes]
+            Returns the probability of the sample for each class in the model,
+            where classes are ordered as they are in ``self.classes_``.
+        """
+        check_is_fitted(self, ["alpha_", "coef_"])
+        return [softmax(self.decision_function(np.tensordot(k, a, axes=1)),
+                        copy=False) for a, k in zip(self.alpha_, X)]
+
+    def predict_log_proba(self, X):
+        """Log of probability estimates.
+
+        The returned estimates for all classes are ordered by the
+        label of classes.
+
+        Parameters
+        ----------
+        X : array-like, shape = [n_samples, n_features]
+
+        Returns
+        -------
+        T : array-like, shape = [n_samples, n_classes]
+            Returns the log-probability of the sample for each class in the
+            model, where classes are ordered as they are in ``self.classes_``.
+        """
+        proba = self.predict_proba(X)
+        return [np.log(p) for p in proba]
