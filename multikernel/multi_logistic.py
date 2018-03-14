@@ -8,7 +8,7 @@ import warnings
 import numpy as np
 from scipy.special import expit
 from sklearn.linear_model import LogisticRegression
-from sklearn.linear_model.logistic import _logistic_loss
+from sklearn.linear_model.logistic import _intercept_dot, _logistic_loss
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.utils.extmath import log_logistic, safe_sparse_dot
@@ -30,44 +30,6 @@ def logistic_objective(K, y, alpha, coef, lamda, beta):
               lamda) for i in range(len(K)))
     obj += beta * np.abs(coef).sum()
     return obj
-
-
-def _intercept_tensor(w, alpha, X, y):
-    """Computes y * np.dot(X, w).
-
-    It takes into consideration if the intercept should be fit or not.
-
-    Parameters
-    ----------
-    w : ndarray, shape (n_features,) or (n_features + 1,)
-        Coefficient vector.
-
-    X : {array-like, sparse matrix}, shape (n_samples, n_features)
-        Training data.
-
-    y : ndarray, shape (n_samples,)
-        Array of labels.
-
-    Returns
-    -------
-    w : ndarray, shape (n_features,)
-        Coefficient vector without the intercept weight (w[-1]) if the
-        intercept should be fit. Unchanged otherwise.
-
-    X : {array-like, sparse matrix}, shape (n_samples, n_features)
-        Training data. Unchanged.
-
-    yz : float
-        y * np.dot(X, w).
-    """
-    c = 0.
-    if alpha.size == X.shape[-1] + 1:
-        c = alpha[-1]
-        alpha = alpha[:-1]
-
-    z = np.tensordot(w, X.dot(alpha), axes=1) + c
-    yz = y * z
-    return w, alpha, c, yz
 
 
 def _logistic_loss_and_grad(w, alpha, X, y, sample_weight=None):
@@ -107,7 +69,8 @@ def _logistic_loss_and_grad(w, alpha, X, y, sample_weight=None):
 
     for i in range(n_patients):
         n_kernels, n_samples, n_features = X[i].shape
-        w_i, alpha_i, c, yz = _intercept_tensor(w, alpha[i], X[i], y[i])
+        X_i = np.tensordot(w, X[i], axes=1)
+        alpha_i, c, yz = _intercept_dot(alpha[i], X_i, y[i])
 
         if sample_weight_orig is None:
             sample_weight = np.ones(n_samples)
@@ -133,7 +96,7 @@ def logistic_alternating(K, y, lamda=0.01, beta=0.01, gamma=.5, max_iter=100,
     objective_new = 0
 
     lr_p2 = [LogisticRegression(
-        verbose=verbose, penalty='l2', C=1 / lamda, warm_start=True,
+        penalty='l2', C=1 / lamda, warm_start=True,
         max_iter=max_iter // 3) for i in range(n_patients)]
     # lr_p1 = SGDClassifier(
     #     loss='log', l1_ratio=0.9,
