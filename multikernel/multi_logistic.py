@@ -32,7 +32,7 @@ def logistic_objective(K, y, alpha, coef, lamda, beta):
     return obj
 
 
-def _logistic_loss_and_grad(w, alpha, X, y, sample_weight=None):
+def _logistic_loss_and_grad(w, alpha, X, y, lamda, sample_weight=None):
     """Computes the logistic loss and gradient.
 
     Parameters
@@ -69,8 +69,8 @@ def _logistic_loss_and_grad(w, alpha, X, y, sample_weight=None):
 
     for i in range(n_patients):
         n_kernels, n_samples, n_features = X[i].shape
-        X_i = np.tensordot(w, X[i], axes=1)
-        alpha_i, c, yz = _intercept_dot(alpha[i], X_i, y[i])
+        x_i = np.tensordot(w, X[i], axes=1)
+        alpha_i, c, yz = _intercept_dot(alpha[i], x_i, y[i])
 
         if sample_weight_orig is None:
             sample_weight = np.ones(n_samples)
@@ -83,10 +83,13 @@ def _logistic_loss_and_grad(w, alpha, X, y, sample_weight=None):
 
         grad += safe_sparse_dot(X[i].dot(alpha_i), z0)
 
+    out += .5 * lamda * np.dot(w, w)
+    grad += lamda * w
     return out, grad
 
 
-def logistic_alternating(K, y, lamda=0.01, beta=0.01, gamma=.5, max_iter=100,
+def logistic_alternating(K, y, lamda=0.01, beta=0.01, gamma=.5,
+                         max_iter=100, l1_ratio=0.1,
                          verbose=0, tol=1e-4, return_n_iter=True):
     # multiple patient
     n_patients = len(K)
@@ -119,15 +122,15 @@ def logistic_alternating(K, y, lamda=0.01, beta=0.01, gamma=.5, max_iter=100,
 
         for it in range(max_iter // 3):
             coef_old = coef.copy()
-            loss, gradient = _logistic_loss_and_grad(coef, alpha_intercept, K, y)
-            coef = soft_thresholding(coef - gamma * gradient, gamma * beta)
+
+            l2_reg = beta * (1 - l1_ratio)
+            loss, gradient = _logistic_loss_and_grad(
+                coef, alpha_intercept, K, y, l2_reg)
+            l1_reg = beta * l1_ratio
+            coef = soft_thresholding(coef - gamma * gradient, gamma * l1_reg)
 
             if np.linalg.norm(coef - coef_old) < tol:
                 break
-
-        # if verbose:
-        #     print("n_iter alpha %d" % lr_p2.n_iter_)
-        #     print("n_iter coef %d" % lr_p1.n_iter_)
 
         obj = logistic_objective(K, y, alpha, coef, lamda, beta)
         objective_difference = abs(objective_new - objective_old)
@@ -161,15 +164,15 @@ class MultipleLogisticRegressionMultipleKernel(
     # Ensure consistent split
     _pairwise = True
 
-    def __init__(self, penalty='l2', dual=False, tol=1e-4, C=1.0,
+    def __init__(self, penalty='l2', dual=False, tol=1e-4,
                  fit_intercept=True, intercept_scaling=1, class_weight=None,
                  random_state=None, solver='liblinear', max_iter=100,
                  multi_class='ovr', verbose=0, warm_start=False, n_jobs=1,
+                 l1_ratio=0.1,
                  lamda=0.01, gamma=1, rho=1, rtol=1e-4, beta=0.01):
         self.penalty = penalty
         self.dual = dual
         self.tol = tol
-        self.C = C
         self.fit_intercept = fit_intercept
         self.intercept_scaling = intercept_scaling
         self.class_weight = class_weight
@@ -186,6 +189,7 @@ class MultipleLogisticRegressionMultipleKernel(
         self.gamma = gamma
         self.rho = rho
         self.rtol = rtol
+        self.l1_ratio = l1_ratio
 
     def fit(self, X, y, sample_weight=None):
         """Fit the model according to the given training data.
@@ -217,7 +221,7 @@ class MultipleLogisticRegressionMultipleKernel(
         self.alpha_, self.coef_, self.n_iter_ = logistic_alternating(
             X, Y, lamda=self.lamda, beta=self.beta, gamma=self.gamma,
             max_iter=self.max_iter, verbose=self.verbose, tol=self.tol,
-            return_n_iter=True)
+            l1_ratio=self.l1_ratio, return_n_iter=True)
 
         if self.classes_.shape[0] > 2:
             ndim = self.classes_.shape[0]
