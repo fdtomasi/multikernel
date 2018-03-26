@@ -128,6 +128,7 @@ def logistic_alternating(K, y, lamda=0.01, beta=0.01, gamma=.5,
                 coef, alpha_intercept, K, y, l2_reg)
             l1_reg = beta * l1_ratio
             coef = soft_thresholding(coef - gamma * gradient, gamma * l1_reg)
+            coef = np.maximum(coef, 0.)
 
             if np.linalg.norm(coef - coef_old) < tol:
                 break
