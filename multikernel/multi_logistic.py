@@ -9,6 +9,8 @@ import numpy as np
 from scipy.special import expit
 from sklearn.linear_model import LogisticRegression, SGDClassifier
 from sklearn.linear_model.logistic import _intercept_dot, _logistic_loss
+from sklearn.linear_model.logistic import \
+    _logistic_loss_and_grad as _loglossgrad
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.utils.extmath import log_logistic, safe_sparse_dot
@@ -82,6 +84,13 @@ def _logistic_loss_and_grad(w, alpha, X, y, lamda, sample_weight=None):
         z0 = sample_weight * (z - 1) * y[i]
 
         grad += safe_sparse_dot(X[i].dot(alpha_i), z0)
+
+        # alpha_i, c_i, x_i = _intercept_dot(alpha[i][:-1], X[i], 1.)
+        # out_i, grad_i = _loglossgrad(
+        #     np.append(w, alpha[i][-1]), x_i.T, y[i], 0,
+        #     sample_weight=sample_weight)
+        # out += out_i
+        # grad += grad_i[:n_kernels]
 
     out += .5 * lamda * np.dot(w, w)
     grad += lamda * w
