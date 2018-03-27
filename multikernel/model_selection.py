@@ -23,10 +23,26 @@ from sklearn.utils.metaestimators import _safe_split
 from sklearn.utils.validation import _num_samples
 
 
+def _safe_split_multi(estimator, X, y, train, test):
+    X_train, y_train, X_test, y_test = [], [], [], []
+    for x_, y_, tr_, ts_ in zip(X, y, train, test):
+        out = [_safe_split(estimator, x__, y_, tr_) for x__ in x_]
+        X_tr, y_tr = zip(*out)
+        X_train.append(np.array(X_tr))
+        y_train.append(y_tr[0])  # they are all equal
+
+        out = [_safe_split(estimator, x__, y_, ts_, tr_) for x__ in x_]
+        X_ts, y_ts = zip(*out)
+        X_test.append(np.array(X_ts))
+        y_test.append(y_ts[0])  # they are all equal
+    return X_train, y_train, X_test, y_test
+
+
 def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
                    parameters, fit_params, return_train_score=False,
                    return_parameters=False, return_n_test_samples=False,
-                   return_times=False, error_score='raise'):
+                   return_times=False, error_score='raise',
+                   return_estimator=False, return_idx=False):
     """Fit estimator and compute scores for a given dataset split.
 
     Parameters
@@ -127,17 +143,8 @@ def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
     start_time = time.time()
 
     # do it for each patient
-    X_train, y_train, X_test, y_test = [], [], [], []
-    for x_, y_, tr_, ts_ in zip(X, y, train, test):
-        out = [_safe_split(estimator, x__, y_, tr_) for x__ in x_]
-        X_tr, y_tr = zip(*out)
-        X_train.append(np.array(X_tr))
-        y_train.append(y_tr[0])  # they are all equal
-
-        out = [_safe_split(estimator, x__, y_, ts_, tr_) for x__ in x_]
-        X_ts, y_ts = zip(*out)
-        X_test.append(np.array(X_ts))
-        y_test.append(y_ts[0])  # they are all equal
+    X_train, y_train, X_test, y_test = _safe_split_multi(
+        estimator, X, y, train, test)
 
     is_multimetric = not callable(scorer)
     n_scorers = len(scorer.keys()) if is_multimetric else 1
@@ -201,6 +208,10 @@ def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
         ret.extend([fit_time, score_time])
     if return_parameters:
         ret.append(parameters)
+    if return_estimator:
+        ret.append(estimator)
+    if return_idx:
+        ret.extend([train, test])
     return ret
 
 
@@ -263,14 +274,16 @@ class MultipleKernelGridSearchCV(GridSearchCV):
             refit_metric = 'score'
 
         # X, y, groups = indexable(X, y, groups)
-        n_splits = cv.get_n_splits(X, y, groups)
-
         if groups is not None:
             raise NotImplementedError("groups are not supported")
 
+        # n_splits = cv.get_n_splits(X, y, groups)
+        n_splits = min(cv.get_n_splits(X_.transpose(1, 2, 0), y_, None)
+                       for X_, y_ in zip(X, y))
+
         def generate_index(X_list, y_list):
-            X_list_transpose = [X.transpose(1, 2, 0) for X in X_list]
-            split = [cv.split(X, y) for X, y in zip(X_list_transpose, y_list)]
+            split = [cv.split(X.transpose(1, 2, 0), y)
+                     for X, y in zip(X_list, y_list)]
             for i in range(n_splits):
                 yield zip(*[next(s) for s in split])
 
@@ -296,17 +309,18 @@ class MultipleKernelGridSearchCV(GridSearchCV):
                                   return_train_score=self.return_train_score,
                                   return_n_test_samples=True,
                                   return_times=True, return_parameters=False,
-                                  error_score=self.error_score)
+                                  error_score=self.error_score,
+                                  return_estimator=True, return_idx=True)
           for parameters, (train, test) in product(
             candidate_params, generate_index_iter))
 
         # if one choose to see train score, "out" will contain train score info
         if self.return_train_score:
             (train_score_dicts, test_score_dicts, test_sample_counts, fit_time,
-             score_time) = zip(*out)
+             score_time, estimators, train_idxs, test_idxs) = zip(*out)
         else:
             (test_score_dicts, test_sample_counts, fit_time,
-             score_time) = zip(*out)
+             score_time, estimators, train_idxs, test_idxs) = zip(*out)
 
         # test_score_dicts and train_score dicts are lists of dictionaries and
         # we make them into dict of lists
@@ -344,6 +358,10 @@ class MultipleKernelGridSearchCV(GridSearchCV):
 
         _store('fit_time', fit_time)
         _store('score_time', score_time)
+        results['estimators'] = estimators
+        results['train_index'] = train_idxs
+        results['test_index'] = test_idxs
+
         # Use one MaskedArray and mask all the places where the param is not
         # applicable for that candidate. Use defaultdict as each candidate may
         # not contain all the params

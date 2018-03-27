@@ -7,11 +7,11 @@ import warnings
 
 import numpy as np
 from scipy.special import expit
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, SGDClassifier
 from sklearn.linear_model.logistic import _intercept_dot, _logistic_loss
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import LabelBinarizer
-from sklearn.utils.extmath import log_logistic, safe_sparse_dot, softmax
+from sklearn.utils.extmath import log_logistic, safe_sparse_dot
 from sklearn.utils.validation import check_is_fitted
 
 from multikernel.lasso import LinearClassifierMixin, squared_norm
@@ -89,8 +89,9 @@ def _logistic_loss_and_grad(w, alpha, X, y, lamda, sample_weight=None):
 
 
 def logistic_alternating(K, y, lamda=0.01, beta=0.01, gamma=.5,
-                         max_iter=100, l1_ratio=0.1,
-                         verbose=0, tol=1e-4, return_n_iter=True):
+                         max_iter=100, l1_ratio_lamda=0.1, l1_ratio_beta=0.1,
+                         deep=True, verbose=0, tol=1e-4, return_n_iter=True,
+                         fit_intercept=True, lr_p2=None):
     # multiple patient
     n_patients = len(K)
     n_kernels = len(K[0])
@@ -98,35 +99,34 @@ def logistic_alternating(K, y, lamda=0.01, beta=0.01, gamma=.5,
     alpha = [np.zeros(K[j].shape[2]) for j in range(n_patients)]
     objective_new = 0
 
-    lr_p2 = [LogisticRegression(
-        penalty='l2', C=1 / lamda, warm_start=True,
-        max_iter=max_iter // 3) for i in range(n_patients)]
-    # lr_p1 = SGDClassifier(
-    #     loss='log', l1_ratio=0.9,
-    #     verbose=0, penalty='elasticnet', alpha=beta, warm_start=True, max_iter=1)
+    max_iter_deep = max_iter // 3 if deep else 1
+
+    if lr_p2 is None:
+        raise ValueError("lr_p2 cant be None")
 
     for iteration_ in range(max_iter):
         w_old = coef.copy()
         alpha_old = [a.copy() for a in alpha]
         objective_old = objective_new
 
-        logistics = [lr_p2[i].fit(np.tensordot(coef, K[i], axes=1), y[i])
-                     for i in range(n_patients)]
-        alpha = [log.coef_.ravel() for log in logistics]
-        intercepts = [log.intercept_.ravel() for log in logistics]
+        for i in range(n_patients):
+            lr_p2[i].fit(np.tensordot(coef, K[i], axes=1), y[i])
+
+        alpha = [log.coef_.ravel() for log in lr_p2]
+        intercepts = [log.intercept_.ravel() for log in lr_p2]
         alpha_intercept = [np.hstack((a, c)) for a, c in zip(alpha, intercepts)]
 
         # X = np.tensordot(alpha, K, axes=([0], [2])).T
         # X = sum(K[j].dot(alpha[j]).T for j in range(n_patients))
         # coef = lr_p1.fit(X, y).coef_.ravel()
 
-        for it in range(max_iter // 3):
+        for it in range(max_iter_deep):
             coef_old = coef.copy()
 
-            l2_reg = beta * (1 - l1_ratio)
+            l2_reg = beta * (1 - l1_ratio_beta)
             loss, gradient = _logistic_loss_and_grad(
                 coef, alpha_intercept, K, y, l2_reg)
-            l1_reg = beta * l1_ratio
+            l1_reg = beta * l1_ratio_beta
             coef = soft_thresholding(coef - gamma * gradient, gamma * l1_reg)
             coef = np.maximum(coef, 0.)
 
@@ -154,7 +154,7 @@ def logistic_alternating(K, y, lamda=0.01, beta=0.01, gamma=.5,
             raise ValueError('something is nan')
     else:
         warnings.warn("Objective did not converge.")
-    return_list = [alpha, coef]
+    return_list = [alpha, coef, intercepts]
     if return_n_iter:
         return_list.append(iteration_)
     return return_list
@@ -169,7 +169,7 @@ class MultipleLogisticRegressionMultipleKernel(
                  fit_intercept=True, intercept_scaling=1, class_weight=None,
                  random_state=None, solver='liblinear', max_iter=100,
                  multi_class='ovr', verbose=0, warm_start=False, n_jobs=1,
-                 l1_ratio=0.1,
+                 l1_ratio_lamda=0.1, l1_ratio_beta=0.1, deep=True,
                  lamda=0.01, gamma=1, rho=1, rtol=1e-4, beta=0.01):
         self.penalty = penalty
         self.dual = dual
@@ -190,7 +190,9 @@ class MultipleLogisticRegressionMultipleKernel(
         self.gamma = gamma
         self.rho = rho
         self.rtol = rtol
-        self.l1_ratio = l1_ratio
+        self.l1_ratio_lamda = l1_ratio_lamda
+        self.l1_ratio_beta = l1_ratio_beta
+        self.deep = deep
 
     def fit(self, X, y, sample_weight=None):
         """Fit the model according to the given training data.
@@ -219,53 +221,38 @@ class MultipleLogisticRegressionMultipleKernel(
         self._label_binarizer = LabelBinarizer(pos_label=1, neg_label=-1)
         Y = [self._label_binarizer.fit_transform(yy).ravel() for yy in y]
 
-        self.alpha_, self.coef_, self.n_iter_ = logistic_alternating(
-            X, Y, lamda=self.lamda, beta=self.beta, gamma=self.gamma,
-            max_iter=self.max_iter, verbose=self.verbose, tol=self.tol,
-            l1_ratio=self.l1_ratio, return_n_iter=True)
+        self.lr_p2 = [SGDClassifier(
+            loss='log', l1_ratio=self.l1_ratio_lamda,
+            fit_intercept=self.fit_intercept,
+            penalty='elasticnet', alpha=self.lamda, warm_start=True,
+            max_iter=(self.max_iter // 3 if self.deep else 1) + 5)
+            for i in range(len(X))]
+
+        self.alpha_, self.coef_, self.intercept_, self.n_iter_ = \
+            logistic_alternating(
+                X, Y, lamda=self.lamda, beta=self.beta, gamma=self.gamma,
+                max_iter=self.max_iter, verbose=self.verbose, tol=self.tol,
+                l1_ratio_lamda=self.l1_ratio_lamda,
+                return_n_iter=True, deep=self.deep,
+                lr_p2=self.lr_p2,
+                l1_ratio_beta=self.l1_ratio_beta,  # unused
+                fit_intercept=self.fit_intercept  # unused
+            )
 
         if self.classes_.shape[0] > 2:
-            ndim = self.classes_.shape[0]
+            # ndim = self.classes_.shape[0]
+            raise ValueError("too many classes")
         else:
             ndim = 1
+
         self.coef_ = self.coef_.reshape(ndim, -1)
+        # self.alpha_ = [alpha.reshape(ndim, -1) for alpha in self.alpha_]
+
         self.y_train_ = Y
 
         return self
 
-    # def decision_function(self, X):
-    #     """Predict confidence scores for samples.
-    #
-    #     The confidence score for a sample is the signed distance of that
-    #     sample to the hyperplane.
-    #
-    #     Parameters
-    #     ----------
-    #     X : {array-like, sparse matrix}, shape = (n_samples, n_features)
-    #         Samples.
-    #
-    #     Returns
-    #     -------
-    #     array, shape=(n_samples,) if n_classes == 2 else (n_samples, n_classes)
-    #         Confidence scores per (sample, class) combination. In the binary
-    #         case, confidence score for self.classes_[1] where >0 means this
-    #         class would be predicted.
-    #     """
-    #     if not hasattr(self, 'coef_') or self.coef_ is None:
-    #         raise NotFittedError("This %(name)s instance is not fitted "
-    #                              "yet" % {'name': type(self).__name__})
-    #
-    #     # X = check_array(X, accept_sparse='csr')
-    #
-    #     # n_features = self.coef_.shape[1]
-    #     # if X.shape[0] != n_features:
-    #     #     raise ValueError("X has %d features per sample; expecting %d"
-    #     #                      % (X.shape[1], n_features))
-    #     #
-    #     scores = [np.tensordot(self.coef_, k, axes=1) for k in X]
-    #     return scores
-
-    def predict(self, K):
+    def predict(self, X):
         """Predict using the kernel ridge model
 
         Parameters
@@ -279,9 +266,11 @@ class MultipleLogisticRegressionMultipleKernel(
             Returns predicted values.
         """
         check_is_fitted(self, ["alpha_", "coef_"])
-        return [LinearClassifierMixin.predict(
-            self, np.tensordot(k, a, axes=1)) for a, k in zip(
-                self.alpha_, K)]
+        # return [LinearClassifierMixin.predict(
+        #     self, np.tensordot(k, a, axes=1)) for a, k in zip(
+        #         self.alpha_, X)]
+        return [self.lr_p2[i].predict(np.tensordot(
+            self.coef_.ravel(), X[i], axes=1)) for i in range(len(X))]
 
     def score(self, K, y, sample_weight=None):
         """Returns the coefficient of determination R^2 of the prediction.
@@ -343,8 +332,11 @@ class MultipleLogisticRegressionMultipleKernel(
             where classes are ordered as they are in ``self.classes_``.
         """
         check_is_fitted(self, ["alpha_", "coef_"])
-        return [softmax(self.decision_function(np.tensordot(k, a, axes=1)),
-                        copy=False) for a, k in zip(self.alpha_, X)]
+        # return [LinearClassifierMixin._predict_proba_lr(
+        #     self, np.tensordot(k, a, axes=1)) for a, k in zip(
+        #         self.alpha_, X)]
+        return [self.lr_p2[i].predict_proba(np.tensordot(
+            self.coef_.ravel(), X[i], axes=1)) for i in range(len(X))]
 
     def predict_log_proba(self, X):
         """Log of probability estimates.
