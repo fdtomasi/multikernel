@@ -359,8 +359,8 @@ class MultipleKernelGridSearchCV(GridSearchCV):
         _store('fit_time', fit_time)
         _store('score_time', score_time)
         results['estimators'] = estimators
-        results['train_index'] = train_idxs
-        results['test_index'] = test_idxs
+        # results['train_index'] = train_idxs
+        # results['test_index'] = test_idxs
 
         # Use one MaskedArray and mask all the places where the param is not
         # applicable for that candidate. Use defaultdict as each candidate may

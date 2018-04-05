@@ -104,9 +104,10 @@ def logistic_alternating(K, y, lamda=0.01, beta=0.01, gamma=.5,
     # multiple patient
     n_patients = len(K)
     n_kernels = len(K[0])
-    coef = np.ones(n_kernels)
+    coef = np.random.rand(n_kernels)
     alpha = [np.zeros(K[j].shape[2]) for j in range(n_patients)]
-    objective_new = 0
+    # intercepts = [np.zeros(K[j].shape[1]) for j in range(n_patients)]
+    obj = 0
 
     max_iter_deep = max_iter // 3 if deep else 1
 
@@ -116,14 +117,22 @@ def logistic_alternating(K, y, lamda=0.01, beta=0.01, gamma=.5,
     for iteration_ in range(max_iter):
         w_old = coef.copy()
         alpha_old = [a.copy() for a in alpha]
-        objective_old = objective_new
+        objective_old = obj
 
+        alpha, intercepts, alpha_intercept = [], [], []
         for i in range(n_patients):
-            lr_p2[i].fit(np.tensordot(coef, K[i], axes=1), y[i])
+            # lr_p2[i].partial_fit(np.tensordot(coef, K[i], axes=1), y[i],
+            #                      classes=np.unique(y[i]))
+            l_i = lr_p2[i].fit(np.tensordot(coef, K[i], axes=1), y[i])
+            a = soft_thresholding(l_i.coef_.ravel(), lamda * l1_ratio_lamda)
+            alpha.append(a)
+            c = soft_thresholding(l_i.intercept_.ravel(), lamda * l1_ratio_lamda)
+            intercepts.append(c)
+            alpha_intercept.append(np.hstack((a, c)))
 
-        alpha = [log.coef_.ravel() for log in lr_p2]
-        intercepts = [log.intercept_.ravel() for log in lr_p2]
-        alpha_intercept = [np.hstack((a, c)) for a, c in zip(alpha, intercepts)]
+        # alpha = [log.coef_.ravel() for log in lr_p2]
+        # intercepts = [log.intercept_.ravel() for log in lr_p2]
+        # alpha_intercept = [np.hstack((a, c)) for a, c in zip(alpha, intercepts)]
 
         # X = np.tensordot(alpha, K, axes=([0], [2])).T
         # X = sum(K[j].dot(alpha[j]).T for j in range(n_patients))
@@ -143,7 +152,7 @@ def logistic_alternating(K, y, lamda=0.01, beta=0.01, gamma=.5,
                 break
 
         obj = logistic_objective(K, y, alpha, coef, lamda, beta)
-        objective_difference = abs(objective_new - objective_old)
+        objective_difference = abs(obj - objective_old)
         # snorm = np.sqrt(squared_norm(coef - w_old) +
         #                 squared_norm(alpha - alpha_old))
 
@@ -151,8 +160,7 @@ def logistic_alternating(K, y, lamda=0.01, beta=0.01, gamma=.5,
         diff_a = np.sqrt(
             sum(squared_norm(a - a_old) for a, a_old in zip(alpha, alpha_old)))
 
-        if verbose:# and iteration_ % 10 == 0:
-            # print("obj: %.4f, snorm: %.4f" % (obj, snorm))
+        if verbose:
             print("obj: %.4f, loss: %.4f, diff_w: %.4f, diff_a: %.4f" % (
                 obj, logistic_loss(K, y, alpha, coef, lamda, beta), diff_w,
                 diff_a))
@@ -230,10 +238,15 @@ class MultipleLogisticRegressionMultipleKernel(
         self._label_binarizer = LabelBinarizer(pos_label=1, neg_label=-1)
         Y = [self._label_binarizer.fit_transform(yy).ravel() for yy in y]
 
-        self.lr_p2 = [SGDClassifier(
-            loss='log', l1_ratio=self.l1_ratio_lamda,
-            fit_intercept=self.fit_intercept,
-            penalty='elasticnet', alpha=self.lamda, warm_start=True,
+        # self.lr_p2 = [SGDClassifier(
+        #     loss='log', l1_ratio=self.l1_ratio_lamda,
+        #     fit_intercept=self.fit_intercept, shuffle=False,
+        #     penalty='elasticnet', alpha=self.lamda, warm_start=True,
+        #     max_iter=(self.max_iter // 3 if self.deep else 1) + 0)
+        #     for i in range(len(X))]
+        self.lr_p2 = [LogisticRegression(
+            fit_intercept=self.fit_intercept, penalty='l2', solver='lbfgs',
+            C=1. / (self.lamda * (1 - self.l1_ratio_lamda)), warm_start=True,
             max_iter=(self.max_iter // 3 if self.deep else 1) + 5)
             for i in range(len(X))]
 
@@ -241,10 +254,9 @@ class MultipleLogisticRegressionMultipleKernel(
             logistic_alternating(
                 X, Y, lamda=self.lamda, beta=self.beta, gamma=self.gamma,
                 max_iter=self.max_iter, verbose=self.verbose, tol=self.tol,
-                l1_ratio_lamda=self.l1_ratio_lamda,
                 return_n_iter=True, deep=self.deep,
-                lr_p2=self.lr_p2,
-                l1_ratio_beta=self.l1_ratio_beta,  # unused
+                lr_p2=self.lr_p2, l1_ratio_beta=self.l1_ratio_beta,
+                l1_ratio_lamda=self.l1_ratio_lamda,  # unused
                 fit_intercept=self.fit_intercept  # unused
             )
 
