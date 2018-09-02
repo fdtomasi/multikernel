@@ -19,7 +19,7 @@ from sklearn.utils.validation import check_is_fitted
 from multikernel.lasso import LinearClassifierMixin, squared_norm
 from multikernel.logistic import LogisticRegressionMultipleKernel
 from multikernel.logistic import logistic_loss as single_logloss
-from regain.prox import soft_thresholding_sign as soft_thresholding
+from regain.prox import soft_thresholding
 
 
 def logistic_loss(K, y, alpha, coef, lamda, beta):
