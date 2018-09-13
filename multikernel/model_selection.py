@@ -217,7 +217,7 @@ def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
 
 def cross_validate(estimator, X, y=None, groups=None, scoring=None, cv=None,
                    n_jobs=1, verbose=0, fit_params=None,
-                   pre_dispatch='2*n_jobs', return_train_score="warn"):
+                   pre_dispatch='2*n_jobs', return_train_score="warn", return_estimator=True):
     """Evaluate metric(s) by cross-validation and also record fit/score times.
 
     Read more in the :ref:`User Guide <multimetric_cross_validation>`.
@@ -307,6 +307,9 @@ def cross_validate(estimator, X, y=None, groups=None, scoring=None, cv=None,
         expensive and is not strictly required to select the parameters that
         yield the best generalization performance.
 
+    return_estimator : boolean, optional
+        Whether to include the estimator
+
     Returns
     -------
     scores : dict of float arrays of shape=(n_splits,)
@@ -328,6 +331,8 @@ def cross_validate(estimator, X, y=None, groups=None, scoring=None, cv=None,
                 The time for scoring the estimator on the test set for each
                 cv split. (Note time for scoring on the train set is not
                 included even if ``return_train_score`` is set to ``True``
+            '' estimator''
+
 
     Examples
     --------
@@ -394,11 +399,11 @@ def cross_validate(estimator, X, y=None, groups=None, scoring=None, cv=None,
         delayed(_fit_and_score)(
             clone(estimator), X, y, scorers, train, test, verbose, None,
             fit_params, return_train_score=return_train_score,
-            return_times=True)
+            return_times=True, return_estimator=return_estimator)
         for train, test in generate_index_iter)
 
-    if return_train_score:
-        train_scores, test_scores, fit_times, score_times = zip(*scores)
+    if return_train_score and return_estimator:
+        train_scores, test_scores, fit_times, score_times, estima  = zip(*scores)
         train_scores = _aggregate_score_dicts(train_scores)
     else:
         test_scores, fit_times, score_times = zip(*scores)
@@ -422,11 +427,16 @@ def cross_validate(estimator, X, y=None, groups=None, scoring=None, cv=None,
                     'please set return_train_score=True').format(key)
                 # warn on key access
                 ret.add_warning(key, message, FutureWarning)
+        if return_estimator:
+            key = "estimator"
+            ret[key] = estima
 
     return ret
 
 
 class MultipleKernelGridSearchCV(GridSearchCV):
+    # Ensure consistent split
+    _pairwise = True
 
     def fit(self, X, y=None, groups=None, **fit_params):
         """Run fit with all sets of parameters.
