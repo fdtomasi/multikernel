@@ -43,7 +43,7 @@ def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
                    parameters, fit_params, return_train_score=False,
                    return_parameters=False, return_n_test_samples=False,
                    return_times=False, error_score='raise',
-                   return_estimator=False, return_idx=False):
+                   return_estimator=False, return_idx=True):
     """Fit estimator and compute scores for a given dataset split.
 
     Parameters
@@ -218,7 +218,8 @@ def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
 
 def cross_validate(estimator, X, y=None, groups=None, scoring=None, cv=None,
                    n_jobs=1, verbose=0, fit_params=None,
-                   pre_dispatch='2*n_jobs', return_train_score="warn", return_estimator=True):
+                   pre_dispatch='2*n_jobs', return_train_score="warn",
+                   return_estimator=True, return_idx=True):
     """Evaluate metric(s) by cross-validation and also record fit/score times.
 
     Read more in the :ref:`User Guide <multimetric_cross_validation>`.
@@ -403,8 +404,8 @@ def cross_validate(estimator, X, y=None, groups=None, scoring=None, cv=None,
             return_times=True, return_estimator=return_estimator)
         for train, test in generate_index_iter)
 
-    if return_train_score and return_estimator:
-        train_scores, test_scores, fit_times, score_times, estima  = zip(*scores)
+    if return_train_score and return_estimator and return_idx:
+        train_scores, test_scores, fit_times, score_times, estima, train_idx, test_idx  = zip(*scores)
         train_scores = _aggregate_score_dicts(train_scores)
     else:
         test_scores, fit_times, score_times = zip(*scores)
@@ -431,7 +432,12 @@ def cross_validate(estimator, X, y=None, groups=None, scoring=None, cv=None,
         if return_estimator:
             key = "estimator"
             ret[key] = estima
-
+        if return_idx:
+            key1 = "train_index"
+            ret[key1] = train_idx
+            key2 = "test_index"
+            ret[key2] = test_idx
+            
     return ret
 
 
@@ -581,8 +587,8 @@ class MultipleKernelGridSearchCV(GridSearchCV):
         _store('fit_time', fit_time)
         _store('score_time', score_time)
         results['estimators'] = estimators
-        # results['train_index'] = train_idxs
-        # results['test_index'] = test_idxs
+        results['train_index'] = train_idxs
+        results['test_index'] = test_idxs
 
         # Use one MaskedArray and mask all the places where the param is not
         # applicable for that candidate. Use defaultdict as each candidate may
@@ -797,8 +803,8 @@ class MultipleKernelRandomizedSearchCV(RandomizedSearchCV):
         _store('fit_time', fit_time)
         _store('score_time', score_time)
         results['estimators'] = estimators
-        # results['train_index'] = train_idxs
-        # results['test_index'] = test_idxs
+        results['train_index'] = train_idxs
+        results['test_index'] = test_idxs
 
         # Use one MaskedArray and mask all the places where the param is not
         # applicable for that candidate. Use defaultdict as each candidate may
