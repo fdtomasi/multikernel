@@ -5,6 +5,7 @@ from __future__ import division
 
 import warnings
 
+# import cupy as cp
 import numpy as np
 from scipy.special import expit
 from sklearn.linear_model import LogisticRegression, SGDClassifier
@@ -19,7 +20,12 @@ from sklearn.utils.validation import check_is_fitted
 from multikernel.lasso import LinearClassifierMixin, squared_norm
 from multikernel.logistic import LogisticRegressionMultipleKernel
 from multikernel.logistic import logistic_loss as single_logloss
-from regain.prox import soft_thresholding
+
+
+
+def soft_thresholding(a, lamda):
+    """Soft-thresholding."""
+    return np.sign(a) * np.maximum(np.abs(a) - lamda, 0)
 
 
 def logistic_loss(K, y, alpha, coef, lamda, beta):

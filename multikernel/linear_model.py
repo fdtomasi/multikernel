@@ -6,6 +6,7 @@ from __future__ import division, print_function
 
 import warnings
 
+import cupy as cp
 import numpy as np
 from sklearn.base import RegressorMixin
 from sklearn.linear_model.base import LinearClassifierMixin
@@ -16,10 +17,13 @@ from sklearn.preprocessing import LabelBinarizer
 from sklearn.utils.extmath import squared_norm
 
 from regain.prox import prox_laplacian
-from regain.prox import soft_thresholding
 from regain.update_rules import update_rho
 from regain.utils import convergence
 
+
+def soft_thresholding(a, lamda):
+    """Soft-thresholding."""
+    return np.sign(a) * np.maximum(np.abs(a) - lamda, 0)
 
 def objective(K, y, alpha, lamda, beta, w):
     """Objective function for lasso kernel learning."""

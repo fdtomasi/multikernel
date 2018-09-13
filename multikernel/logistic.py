@@ -5,6 +5,7 @@ from __future__ import division
 
 import warnings
 
+import cupy as cp
 import numpy as np
 from sklearn.exceptions import NotFittedError
 from sklearn.linear_model import LogisticRegression, SGDClassifier
@@ -17,12 +18,14 @@ from multikernel.lasso import LinearClassifierMixin
 
 def logistic_loss(K, y, alpha, coef, lamda, beta):
     X = np.tensordot(coef, K, axes=1)
-    return _logistic_loss(alpha, X, y, lamda) - .5 * lamda * np.dot(alpha, alpha)
+    return cp.array(_logistic_loss(alpha, X, y, lamda) -
+                    .5 * lamda * np.dot(alpha, alpha))
 
 
 def logistic_objective(K, y, alpha, coef, lamda, beta):
     X = np.tensordot(coef, K, axes=1)
-    return _logistic_loss(alpha, X, y, lamda) + beta * np.abs(coef).sum()
+    return cp.array(_logistic_loss(alpha, X, y, lamda) +
+                    beta * np.abs(coef).sum())
 
 
 def logistic_alternating(K, y, lamda=0.01, beta=0.01, gamma=.5, max_iter=100,
