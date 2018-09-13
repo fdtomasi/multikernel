@@ -6,7 +6,6 @@ from __future__ import division, print_function
 
 import warnings
 
-import cupy as cp
 import numpy as np
 from sklearn.base import RegressorMixin
 from sklearn.linear_model.base import LinearClassifierMixin
