@@ -5,7 +5,6 @@ from __future__ import division
 
 import warnings
 
-import cupy as cp
 import numpy as np
 from sklearn.exceptions import NotFittedError
 from sklearn.linear_model import LogisticRegression, SGDClassifier
@@ -24,7 +23,7 @@ def logistic_loss(K, y, alpha, coef, lamda, beta):
 
 def logistic_objective(K, y, alpha, coef, lamda, beta):
     X = np.tensordot(coef, K, axes=1)
-    return cp.array(_logistic_loss(alpha, X, y, lamda) +
+    return np.array(_logistic_loss(alpha, X, y, lamda) +
                     beta * np.abs(coef).sum())
 
 
